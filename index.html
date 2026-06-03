@@ -126,12 +126,8 @@
                 <button id="btn-toggle-sound" class="w-10 h-10 rounded-full bg-surface text-secondary hover:text-primary transition flex items-center justify-center border border-primary/10" title="Aktifkan/Matikan Suara">
                     <i id="sound-icon" class="fas fa-volume-up"></i>
                 </button>
-                <!-- Ekspor Riwayat -->
-                <button id="btn-export-csv" class="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm shadow-primary/20">
-                    <i class="fas fa-file-export"></i> Ekspor CSV
-                </button>
                 <!-- Badge Identifikasi Sistem -->
-                <div class="hidden md:flex w-10 h-10 rounded-full bg-primary/10 items-center justify-center text-primary">
+                <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
                     <i class="fas fa-qrcode text-xl"></i>
                 </div>
             </div>
@@ -155,7 +151,7 @@
                         <h2 class="font-bold text-secondary text-base flex items-center gap-2">
                             <i class="fas fa-camera text-primary"></i> Scan E-Ticket Tamu
                         </h2>
-                        <span class="bg-primary/10 text-primary text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Kamera Aktif</span>
+                        <span id="camera-badge" class="bg-primary/10 text-primary text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Kamera Aktif</span>
                     </div>
 
                     <!-- Kotak Scanner dengan Animasi Sinar Laser -->
@@ -328,9 +324,12 @@
         
         let html5QrCode;
         let isProcessing = false;
-        let currentFacingMode = "environment"; // Default: Kamera belakang HP
+        let currentFacingMode = "environment"; // Default: "environment" (Kamera belakang HP) atau "user" (Kamera depan)
         let globalHistoryList = []; // Array data riwayat orisinil
         let isMuted = false;
+
+        // Variabel Pengatur Penguncian & Transisi Status Kamera
+        let isCameraTransitioning = false;
 
         document.addEventListener("DOMContentLoaded", () => {
             // Evaluasi Status URL Google Apps Script
@@ -352,21 +351,19 @@
                 renderHistoryList(filtered, false); // false mencegah resetting statistik utama saat mengetik
             });
 
-            // Tombol Tukar Kamera (Depan <-> Belakang)
-            document.getElementById('btn-switch-cam').addEventListener('click', () => {
-                currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
-                if (html5QrCode) {
-                    html5QrCode.stop().then(() => {
-                        initScanner();
-                    }).catch(err => {
-                        console.error("Gagal menghentikan kamera", err);
-                        initScanner();
-                    });
+            // Tombol Tukar Kamera Fisik dengan Proteksi Spam Klik
+            document.getElementById('btn-switch-cam').addEventListener('click', async () => {
+                if (isCameraTransitioning) {
+                    showToast("Harap tunggu, lensa sedang beralih...", "warning");
+                    return;
                 }
+                
+                // Toggle mode kamera depan <-> belakang secara stabil
+                currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+                showToast("Beralih ke " + (currentFacingMode === "environment" ? "Kamera Belakang" : "Kamera Depan") + "...", "info");
+                
+                await initScanner();
             });
-
-            // Fitur Ekspor CSV
-            document.getElementById('btn-export-csv').addEventListener('click', exportToCSV);
 
             // Fitur Toggle Suara Pemindai
             document.getElementById('btn-toggle-sound').addEventListener('click', () => {
@@ -458,34 +455,6 @@
             }
         }
 
-        // Mengunduh Seluruh Daftar Riwayat dalam Format CSV
-        function exportToCSV() {
-            if (globalHistoryList.length === 0) {
-                showToast("Tidak ada data tamu untuk diekspor.", "error");
-                return;
-            }
-
-            let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "No,Nama Tamu,Jumlah Hadir,Waktu Check-in\n";
-
-            globalHistoryList.forEach((item, index) => {
-                const rowNum = index + 1;
-                const escapedName = `"${item.nama.replace(/"/g, '""')}"`;
-                const cleanCount = item.jumlahHadir || item.jml || 1;
-                const formattedTime = parseTimestamp(item.timestamp);
-                csvContent += `${rowNum},${escapedName},${cleanCount},${formattedTime}\n`;
-            });
-
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `Buku_Tamu_Fanny_Ibnu_${Date.now()}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast("Berhasil mengunduh dokumen CSV.", "success");
-        }
-
         // Kustom Notifikasi Toast Popup
         function showToast(message, type = "success") {
             const container = document.getElementById('toast-container');
@@ -522,44 +491,74 @@
             }, 5000);
         }
 
-        // Inisialisasi Scanner Kamera
-        function initScanner() {
+        // ==========================================
+        // SISTEM KONTROL KAMERA INTEGRAL ADAPTIF (ANTI-BUG & ANTI-BENTROKAN STATE)
+        // ==========================================
+
+        // Inisialisasi Utama Scanner Kamera Berbasis facingMode (Stabil 100% pada Seluler & WebView)
+        async function initScanner() {
+            if (isCameraTransitioning) return;
+            isCameraTransitioning = true;
+
+            const cameraBadge = document.getElementById("camera-badge");
+            if (cameraBadge) {
+                cameraBadge.innerText = "Koneksi Lensa...";
+                cameraBadge.className = "bg-amber-100 text-amber-600 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse";
+            }
+
+            // 1. Instansiasi objek html5QrCode jika belum dibuat
             if (!html5QrCode) {
                 html5QrCode = new Html5Qrcode("reader");
             }
             
-            // Konfigurasi ukuran target bidik pemindaian adaptif
+            // 2. Cegah Bentrokan Sesi: Hentikan paksa sesi scanning yang masih aktif
+            try {
+                const state = html5QrCode.getState();
+                if (state === 2 || state === 3) { // 2 = SCANNING, 3 = PAUSED
+                    await html5QrCode.stop();
+                }
+            } catch (errStop) {
+                console.warn("Pembersihan instans kamera sebelumnya dilewati:", errStop);
+            }
+
+            // 3. Konfigurasi Bidik Pemindaian (Safeguard dimensi di bawah 50px)
             const config = { 
                 fps: 15, 
                 qrbox: function(width, height) {
                     const minEdge = Math.min(width, height);
-                    return { width: Math.floor(minEdge * 0.65), height: Math.floor(minEdge * 0.65) };
+                    const size = minEdge > 0 ? Math.floor(minEdge * 0.70) : 200;
+                    const finalSize = size < 150 ? 150 : size;
+                    return { width: finalSize, height: finalSize };
                 }
             };
             
-            html5QrCode.start(
-                { facingMode: currentFacingMode },
-                config,
-                onScanSuccess,
-                onScanFailure
-            ).catch(err => {
-                console.warn("Kamera gagal dimuat dengan mode: ", currentFacingMode, err);
+            // 4. Nyalakan Kamera Menggunakan facingMode secara Langsung (Bebas NotReadableError)
+            try {
+                await html5QrCode.start(
+                    { facingMode: currentFacingMode },
+                    config,
+                    onScanSuccess,
+                    onScanFailure
+                );
                 
-                // Fallback otomatis ke kamera alternatif
-                if (currentFacingMode === "environment") {
-                    currentFacingMode = "user";
-                    html5QrCode.start(
-                        { facingMode: currentFacingMode },
-                        config,
-                        onScanSuccess,
-                        onScanFailure
-                    ).catch(errFallback => {
-                        showToast("Kamera tidak ditemukan. Pastikan izin kamera aktif.", "error");
-                    });
-                } else {
-                    showToast("Sistem pemindai gagal berjalan. Harap muat ulang.", "error");
+                if (cameraBadge) {
+                    cameraBadge.innerText = currentFacingMode === "environment" ? "Kamera Belakang" : "Kamera Depan";
+                    cameraBadge.className = "bg-primary/10 text-primary text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider";
                 }
-            });
+                
+                document.getElementById('laser-line').style.display = 'block';
+            } catch (err) {
+                console.error("Gagal memulai kamera dengan facingMode " + currentFacingMode, err);
+                showToast("Izin kamera ditolak atau sedang digunakan aplikasi lain.", "error");
+                
+                if (cameraBadge) {
+                    cameraBadge.innerText = "Kamera Terkunci";
+                    cameraBadge.className = "bg-red-100 text-red-600 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider";
+                }
+            } finally {
+                // Lepaskan kunci transisi kamera
+                isCameraTransitioning = false;
+            }
         }
 
         // Event handler saat pemindaian sukses mendeteksi kode QR
