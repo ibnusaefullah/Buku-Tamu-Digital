@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Buku Tamu Digital - Fanny & Ibnu</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- HTML5 QR Code Library -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#B5838D',
+                        'surface': '#F8EDEB',
+                        'secondary': '#6D6875',
+                    },
+                    fontFamily: {
+                        'sans': ['"Montserrat"', 'sans-serif'],
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' }
+                        }
+                    },
+                    animation: {
+                        fadeInUp: 'fadeInUp 0.4s ease-out forwards',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #F8EDEB; color: #4A4A4A; }
+        #reader { width: 100%; border-radius: 1rem; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: none !important; }
+        #reader video { object-fit: cover; }
+        #reader__dashboard_section_csr span { display: none !important; }
+        #reader__dashboard_section_swaplink { display: none !important; }
+        #reader button { background: #B5838D; color: white; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; margin-top: 10px; cursor: pointer; transition: all 0.2s; }
+        #reader button:hover { background: #9d6d76; }
+        
+        #history-container::-webkit-scrollbar { width: 5px; }
+        #history-container::-webkit-scrollbar-track { background: transparent; }
+        #history-container::-webkit-scrollbar-thumb { background: #B5838D/30; border-radius: 10px; }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Toast Container untuk Notifikasi Custom -->
+    <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-md px-4 pointer-events-none"></div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm py-4 px-6 relative z-10">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold text-secondary">Buku Tamu Digital</h1>
+                <p class="text-xs text-primary font-medium tracking-wider uppercase">Pernikahan Fanny & Ibnu</p>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                <i class="fas fa-qrcode text-xl"></i>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-md mx-auto p-4 flex flex-col items-center">
+        
+        <div class="w-full bg-white p-4 rounded-3xl shadow-lg mb-6 relative">
+            <!-- Kamera Scanner -->
+            <div id="reader"></div>
+            
+            <!-- Overlay Scanning Status -->
+            <div id="scan-status" class="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 hidden flex-col items-center justify-center rounded-3xl transition-opacity">
+                <div class="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p class="text-secondary font-bold animate-pulse">Memproses Tiket...</p>
+            </div>
+        </div>
+
+        <!-- Tombol Kontrol Kamera -->
+        <div class="flex gap-4 w-full mb-6">
+            <button id="btn-switch-cam" class="flex-1 bg-white border border-primary/30 text-primary py-3 rounded-2xl font-bold shadow-sm hover:bg-primary/5 transition flex justify-center items-center gap-2">
+                <i class="fas fa-sync-alt"></i> Putar Kamera
+            </button>
+        </div>
+
+        <!-- Statistik Kehadiran -->
+        <div class="grid grid-cols-2 gap-4 w-full mb-6">
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center">
+                <span class="text-xs text-secondary/60 font-medium uppercase tracking-wider">Rombongan</span>
+                <span id="stat-groups" class="text-2xl font-bold text-primary mt-1">0</span>
+            </div>
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center">
+                <span class="text-xs text-secondary/60 font-medium uppercase tracking-wider">Total Jiwa</span>
+                <span id="stat-people" class="text-2xl font-bold text-secondary mt-1">0</span>
+            </div>
+        </div>
+
+        <!-- Riwayat Check-in -->
+        <div class="w-full text-left">
+            <div class="flex justify-between items-center mb-3 px-2">
+                <div class="flex items-center gap-1.5">
+                    <h3 class="text-sm font-bold text-secondary/70 uppercase tracking-widest">Riwayat Check-in</h3>
+                    <!-- Tombol Refresh Riwayat -->
+                    <button id="btn-refresh-history" class="text-primary hover:text-primary/80 transition-all duration-300 p-1 flex items-center justify-center rounded-full hover:bg-primary/10 w-7 h-7 focus:outline-none" title="Segarkan Riwayat">
+                        <i id="icon-refresh" class="fas fa-sync-alt text-xs"></i>
+                    </button>
+                </div>
+                
+                <!-- Input Pencarian -->
+                <div class="relative w-1/2">
+                    <input type="text" id="search-history" placeholder="Cari nama..." class="w-full text-xs px-3 py-1.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary text-secondary">
+                    <i class="fas fa-search absolute right-3 top-2.5 text-gray-300 text-[10px]"></i>
+                </div>
+            </div>
+            
+            <div id="history-container" class="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                <!-- Status loading awal -->
+                <div class="flex flex-col items-center justify-center py-8 text-secondary/50">
+                    <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                    <p class="text-xs">Memuat riwayat kehadiran...</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal Success / Gagal / Duplikat -->
+    <div id="result-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm text-center transform scale-95 transition-transform duration-300 shadow-2xl" id="result-card">
+            
+            <div id="modal-icon" class="w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-4 border-4">
+                <!-- Icon diset lewat JS -->
+            </div>
+            
+            <h2 id="modal-title" class="text-2xl font-bold text-secondary mb-2">Berhasil!</h2>
+            <p id="modal-desc" class="text-gray-500 mb-6 text-sm">Data tamu telah disimpan ke buku tamu.</p>
+
+            <div id="guest-info" class="bg-primary/5 border border-primary/20 rounded-2xl p-4 mb-6 hidden">
+                <p class="text-xs text-secondary/60 uppercase tracking-widest mb-1">Nama Tamu</p>
+                <h3 id="guest-name" class="font-bold text-xl text-primary mb-3">Nama Tamu</h3>
+                <div class="inline-flex bg-primary text-white items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold">
+                    <i class="fas fa-users"></i> <span id="guest-count">1 Orang</span>
+                </div>
+            </div>
+
+            <button onclick="closeModal()" class="w-full bg-secondary hover:bg-secondary/90 text-white font-bold py-4 rounded-xl transition">
+                Tutup & Scan Lagi
+            </button>
+        </div>
+    </div>
+
+    <!-- Audio Beep -->
+    <audio id="beep-sound" preload="auto">
+        <source src="https://www.soundjay.com/buttons/sounds/button-09.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        // ==========================================
+        // URL GOOGLE APPS SCRIPT ANDA
+        // ==========================================
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby4Gcea4i2ECTvA-aUumEN5OgC2A_QKegXf3BEGsdfKBFWq5uOQ8FCsmgrKiDYhi85iFA/exec'; 
+        
+        let html5QrCode;
+        let isProcessing = false;
+        let currentFacingMode = "environment"; // Default: Kamera belakang
+        let globalHistoryList = []; // Menyimpan salinan data riwayat asli untuk pencarian & statistik
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Peringatan jika web tidak HTTPS
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                showToast("Kamera mungkin tidak berfungsi karena website tidak menggunakan HTTPS.", "warning");
+            }
+
+            // Inisialisasi Scanner & Ambil Riwayat dari Database
+            initScanner();
+            loadHistory();
+
+            // Fitur Pencarian Riwayat
+            document.getElementById('search-history').addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase().trim();
+                const filtered = globalHistoryList.filter(item => item.nama.toLowerCase().includes(query));
+                renderHistoryList(filtered, false); // false agar tidak menimpa state statistik utama
+            });
+
+            // Tombol Ganti Kamera
+            document.getElementById('btn-switch-cam').addEventListener('click', () => {
+                currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+                if (html5QrCode) {
+                    html5QrCode.stop().then(() => {
+                        initScanner();
+                    }).catch(err => {
+                        console.log("Stop camera error", err);
+                        initScanner();
+                    });
+                }
+            });
+
+            // Tombol Refresh Riwayat secara manual
+            const btnRefresh = document.getElementById('btn-refresh-history');
+            const iconRefresh = document.getElementById('icon-refresh');
+            if (btnRefresh && iconRefresh) {
+                btnRefresh.addEventListener('click', () => {
+                    // Bersihkan kolom pencarian agar semua data tampil
+                    document.getElementById('search-history').value = '';
+                    
+                    // Putar ikon refresh
+                    iconRefresh.classList.add('animate-spin');
+                    
+                    // Segarkan riwayat check-in
+                    loadHistory(() => {
+                        // Hilangkan efek putar setelah selesai memuat
+                        setTimeout(() => {
+                            iconRefresh.classList.remove('animate-spin');
+                        }, 600);
+                    });
+                });
+            }
+        });
+
+        // --- Custom Toast Notification ---
+        function showToast(message, type = "success") {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let bgClass = "bg-green-500";
+            let iconClass = "fa-check-circle";
+            if (type === "error") {
+                bgClass = "bg-red-500";
+                iconClass = "fa-times-circle";
+            } else if (type === "warning") {
+                bgClass = "bg-amber-500";
+                iconClass = "fa-exclamation-circle";
+            } else if (type === "info") {
+                bgClass = "bg-blue-500";
+                iconClass = "fa-info-circle";
+            }
+            
+            toast.className = `${bgClass} text-white px-4 py-3 rounded-2xl shadow-lg flex items-center gap-3 text-xs font-semibold animate-fadeInUp pointer-events-auto max-w-sm w-full`;
+            toast.innerHTML = `
+                <i class="fas ${iconClass} text-lg"></i>
+                <span class="flex-1">${message}</span>
+                <button class="text-white/70 hover:text-white" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function initScanner() {
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+            
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            
+            html5QrCode.start(
+                { facingMode: currentFacingMode },
+                config,
+                onScanSuccess,
+                onScanFailure
+            ).catch(err => {
+                console.warn("Gagal dengan kamera:", currentFacingMode, err);
+                
+                // FALLBACK: Mencoba kamera depan otomatis jika di PC/Laptop
+                if (currentFacingMode === "environment") {
+                    console.log("Mencoba kamera depan...");
+                    currentFacingMode = "user";
+                    
+                    html5QrCode.start(
+                        { facingMode: currentFacingMode },
+                        config,
+                        onScanSuccess,
+                        onScanFailure
+                    ).catch(err2 => {
+                        showToast("Gagal mengakses kamera. Izinkan akses kamera pada browser.", "error");
+                    });
+                } else {
+                    showToast("Gagal mengakses kamera. Pastikan izin browser diaktifkan.", "error");
+                }
+            });
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            // Suara Beep
+            const beep = document.getElementById('beep-sound');
+            if(beep) beep.play().catch(e => console.log("Audio play diabaikan browser:", e));
+            
+            document.getElementById('scan-status').style.display = 'flex';
+
+            if (html5QrCode.getState() === 2) { // 2 = SCANNING
+                html5QrCode.pause(true);
+            }
+
+            try {
+                // Parse JSON dari QR Code
+                const dataTamu = JSON.parse(decodedText);
+                
+                if (!dataTamu.nama || !dataTamu.hadir) {
+                    throw new Error("Format QR Tidak Dikenal");
+                }
+
+                // FILTER DUPLIKAT FRONTEND (Deteksi instan nama ganda sebelum hit database)
+                const targetNama = dataTamu.nama.trim().toLowerCase();
+                const dataSama = globalHistoryList.find(item => item.nama.trim().toLowerCase() === targetNama);
+
+                if (dataSama) {
+                    document.getElementById('scan-status').style.display = 'none';
+                    
+                    let jamKehadiran = "sebelumnya";
+                    const dateObj = parseTimestamp(dataSama.timestamp);
+                    if (dateObj) {
+                        jamKehadiran = "pukul " + dateObj;
+                    }
+
+                    showModal(
+                        "warning", 
+                        "Sudah Check-in!", 
+                        `Tamu atas nama "${dataSama.nama}" sudah terdaftar masuk ${jamKehadiran}.`, 
+                        dataTamu
+                    );
+                    return;
+                }
+
+                // Jika nama belum terdaftar, lakukan check-in ke server
+                sendToCheckin(dataTamu);
+
+            } catch (error) {
+                document.getElementById('scan-status').style.display = 'none';
+                showModal("error", "QR Tidak Valid!", "QR Code ini bukan E-Ticket resmi dari undangan Fanny & Ibnu.");
+            }
+        }
+
+        function onScanFailure(error) {
+            // Abaikan pencarian frame gagal
+        }
+
+        // Ambil riwayat check-in dari Google Spreadsheet secara real-time
+        function loadHistory(callback = null) {
+            const container = document.getElementById('history-container');
+            
+            // Tampilan Loading Shimmer jika container dalam keadaan kosong
+            if (container.children.length <= 1 || container.innerHTML.includes('Memuat') || container.innerHTML.includes('Belum ada')) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-8 text-secondary/50">
+                        <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                        <p class="text-xs">Memuat riwayat kehadiran...</p>
+                    </div>
+                `;
+            }
+
+            if (SCRIPT_URL.includes("PASTE_URL")) {
+                // Mode Simulasi: Ambil dari localStorage
+                const localData = localStorage.getItem('guest_scan_history');
+                if (localData) {
+                    const parsedData = JSON.parse(localData);
+                    renderHistoryList(parsedData);
+                } else {
+                    container.innerHTML = '<p class="text-center text-xs text-secondary/50 italic mt-5">Belum ada tamu yang di-scan (Mode Simulasi).</p>';
+                    updateStats([]);
+                }
+                if (callback) callback();
+                return;
+            }
+
+            // Mencegah caching browser dengan menyelipkan parameter timestamp dinamis
+            const cacheBusterUrl = `${SCRIPT_URL}?action=get_checkin&_=${Date.now()}`;
+
+            // Request riwayat asli ke GAS
+            fetch(cacheBusterUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error("Respons jaringan tidak stabil");
+                    }
+                    return response.json();
+                })
+                .then(res => {
+                    if (res.result === "success") {
+                        renderHistoryList(res.data);
+                    } else {
+                        container.innerHTML = '<p class="text-center text-xs text-red-500 italic mt-5">Gagal membaca database check-in.</p>';
+                    }
+                })
+                .catch(err => {
+                    console.error("Gagal sinkronisasi data:", err);
+                    container.innerHTML = `
+                        <div class="text-center py-5">
+                            <p class="text-xs text-red-500 italic mb-2">Gagal terhubung ke database.</p>
+                            <p class="text-[10px] text-gray-400">Pastikan nama tab di Google Sheets adalah "Buku Tamu" & script dideploy sebagai 'Anyone'.</p>
+                        </div>
+                    `;
+                    showToast("Gagal memuat ulang data. Coba lagi.", "error");
+                })
+                .finally(() => {
+                    if (callback) callback();
+                });
+        }
+
+        // Fungsi pembantu parsing tanggal Indonesia (DD/MM/YYYY) agar tangguh
+        function parseTimestamp(ts) {
+            if (!ts) return "Baru Saja";
+            
+            // Jika format ISO standar
+            const d = new Date(ts);
+            if (!isNaN(d.getTime())) {
+                return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+            }
+            
+            // Jika format Indonesia dari sheet "DD/MM/YYYY HH:MM:SS" atau sejenisnya
+            const match = String(ts).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2}):(\d{2})/);
+            if (match) {
+                const jam = match[4].padStart(2, '0');
+                const menit = match[5].padStart(2, '0');
+                return `${jam}:${menit} WIB`;
+            }
+            
+            // Fallback memotong jam dari format string standar
+            if (String(ts).includes(" ")) {
+                const parts = String(ts).split(/\s+/);
+                const timePart = parts[1] || parts[0];
+                if (timePart && timePart.includes(":")) {
+                    const timeSplit = timePart.split(":");
+                    return `${timeSplit[0].padStart(2, '0')}:${timeSplit[1].padStart(2, '0')} WIB`;
+                }
+            }
+            
+            return "Baru Saja";
+        }
+
+        // Tampilkan daftar tamu di UI
+        function renderHistoryList(dataList, updateStatsTrigger = true) {
+            const container = document.getElementById('history-container');
+            container.innerHTML = '';
+
+            if (updateStatsTrigger) {
+                globalHistoryList = dataList;
+                updateStats(dataList);
+            }
+
+            if (!dataList || dataList.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-6 text-secondary/50">
+                        <p class="text-xs italic">Belum ada tamu yang di-scan.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            dataList.forEach(item => {
+                const timeStr = parseTimestamp(item.timestamp);
+
+                const div = document.createElement('div');
+                div.className = "bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between animate-fadeInUp";
+                div.innerHTML = `
+                    <div>
+                        <h4 class="font-bold text-secondary text-sm">${item.nama}</h4>
+                        <p class="text-xs text-gray-400"><i class="far fa-clock"></i> ${timeStr}</p>
+                    </div>
+                    <div class="bg-primary/10 text-primary px-3 py-1 rounded-lg text-xs font-bold">
+                        ${item.jumlahHadir || item.jml || 1} Orang
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Kalkulasi Statistik Atas
+        function updateStats(dataList) {
+            const statGroups = document.getElementById('stat-groups');
+            const statPeople = document.getElementById('stat-people');
+
+            const totalGroups = dataList.length;
+            const totalPeople = dataList.reduce((acc, curr) => acc + parseInt(curr.jumlahHadir || curr.jml || 1), 0);
+
+            statGroups.innerText = totalGroups;
+            statPeople.innerText = totalPeople;
+        }
+
+        function sendToCheckin(dataTamu) {
+            if(SCRIPT_URL.includes("PASTE_URL")) {
+                // Mode Simulasi
+                setTimeout(() => {
+                    document.getElementById('scan-status').style.display = 'none';
+                    showModal("success", "Check-in Berhasil!", "Data telah dicatat ke Browser. (Mode Simulasi)", dataTamu);
+                    addLocalHistory(dataTamu);
+                }, 1000);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'checkin');
+            formData.append('nama', dataTamu.nama);
+            formData.append('jml', dataTamu.jml || 1);
+
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(result => {
+                document.getElementById('scan-status').style.display = 'none';
+                if(result.result === "success") {
+                    showModal("success", "Check-in Berhasil!", "Data tamu telah masuk ke Spreadsheet.", dataTamu);
+                    loadHistory();
+                } else if(result.result === "duplicate") {
+                    // Penanganan jika server menolak karena nama ganda di database sheet
+                    showModal("warning", "Sudah Terdaftar!", "Nama tamu ini terdeteksi sudah check-in di Spreadsheet sebelumnya.", dataTamu);
+                    loadHistory();
+                } else {
+                    showModal("error", "Gagal Check-in", "Terjadi kesalahan pada server database. Coba lagi.");
+                }
+            })
+            .catch(error => {
+                document.getElementById('scan-status').style.display = 'none';
+                showModal("error", "Koneksi Terputus", "Pastikan internet stabil dan coba scan ulang.");
+            });
+        }
+
+        // Untuk mode simulasi: simpan ke LocalStorage agar refresh tidak hilang
+        function addLocalHistory(data) {
+            const localHistory = localStorage.getItem('guest_scan_history') ? JSON.parse(localStorage.getItem('guest_scan_history')) : [];
+            
+            // Verifikasi duplikat di tingkat simulasi lokal
+            const isDuplicate = localHistory.some(item => item.nama.trim().toLowerCase() === data.nama.trim().toLowerCase());
+            if (isDuplicate) return;
+
+            localHistory.unshift({
+                nama: data.nama,
+                jumlahHadir: data.jml || 1,
+                timestamp: new Date().toISOString()
+            });
+            localStorage.setItem('guest_scan_history', JSON.stringify(localHistory));
+            renderHistoryList(localHistory);
+        }
+
+        // --- UI Functions ---
+        function showModal(type, title, desc, data = null) {
+            const modal = document.getElementById('result-modal');
+            const card = document.getElementById('result-card');
+            const icon = document.getElementById('modal-icon');
+            const infoBox = document.getElementById('guest-info');
+
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-desc').innerText = desc;
+
+            if (type === "success") {
+                icon.className = "w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-4 border-4 border-green-500 bg-green-50 text-green-500 text-4xl animate-bounce";
+                icon.innerHTML = '<i class="fas fa-check"></i>';
+                
+                if(data) {
+                    infoBox.style.display = "block";
+                    document.getElementById('guest-name').innerText = data.nama;
+                    document.getElementById('guest-count').innerText = (data.jml || 1) + " Orang";
+                }
+            } else if (type === "warning") {
+                // Tampilan cantik untuk tamu yang sudah scan masuk sebelumnya (Warning)
+                icon.className = "w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-4 border-4 border-amber-500 bg-amber-50 text-amber-500 text-4xl";
+                icon.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                
+                if(data) {
+                    infoBox.style.display = "block";
+                    document.getElementById('guest-name').innerText = data.nama;
+                    document.getElementById('guest-count').innerText = (data.jml || 1) + " Orang";
+                }
+            } else {
+                icon.className = "w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-4 border-4 border-red-500 bg-red-50 text-red-500 text-4xl";
+                icon.innerHTML = '<i class="fas fa-times"></i>';
+                infoBox.style.display = "none";
+            }
+
+            modal.style.display = 'flex';
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                card.classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('result-modal');
+            const card = document.getElementById('result-card');
+            
+            modal.classList.add('opacity-0');
+            card.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.style.display = 'none';
+                isProcessing = false;
+                if (html5QrCode && html5QrCode.getState() === 3) { // 3 = PAUSED
+                    html5QrCode.resume();
+                }
+            }, 300);
+        }
+    </script>
+</body>
+</html>
